@@ -19,6 +19,8 @@ use Smile\ElasticsuiteCore\Api\Index\Mapping\FieldInterface;
 /**
  * Default implementation for ES mapping field (Smile\ElasticsuiteCore\Api\Index\Mapping\FieldInterface).
  *
+ * @SuppressWarnings(ExcessiveClassComplexity)
+ *
  * @category Smile_Elasticsuite
  * @package  Smile\ElasticsuiteCore
  * @author   Aurelien FOUCRET <aurelien.foucret@smile.fr>
@@ -233,7 +235,7 @@ class Field implements FieldInterface
         $isAnalyzerCorrect = true;
 
         if ($property['type'] == self::FIELD_TYPE_STRING) {
-            $isAnalyzed        = $expectedAnalyzer !== self::ANALYZER_UNTOUCHED;
+            $isAnalyzed = $expectedAnalyzer !== self::ANALYZER_UNTOUCHED;
 
             if ($isAnalyzed && (!isset($property['analyzer']) || $property['analyzer'] != $expectedAnalyzer)) {
                 $isAnalyzerCorrect = false;
@@ -287,11 +289,11 @@ class Field implements FieldInterface
     {
         $analyzers = [];
 
-        if ($this->isSearchable()) {
+        if ($this->isSearchable() || $this->isUsedForSortBy()) {
             // Default search analyzer.
             $analyzers = [self::ANALYZER_STANDARD];
 
-            if ($this->getSearchWeight() > 1) {
+            if ($this->isSearchable() && $this->getSearchWeight() > 1) {
                 $analyzers[] = self::ANALYZER_WHITESPACE;
                 $analyzers[] = self::ANALYZER_SHINGLE;
             }

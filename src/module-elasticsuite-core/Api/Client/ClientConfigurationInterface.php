@@ -43,4 +43,32 @@ interface ClientConfigurationInterface
      * @return integer
      */
     public function getConnectionTimeout();
+
+    /**
+     * Indicates the protocol scheme used (http/https).
+     *
+     * @return string
+     */
+    public function getScheme();
+
+    /**
+     * Indicates whether basic HTTP authentication on the node is enabled or not.
+     *
+     * @return boolean
+     */
+    public function isHttpAuthEnabled();
+
+    /**
+     * Return the basic HTTP authentication user.
+     *
+     * @return string
+     */
+    public function getHttpAuthUser();
+
+    /**
+     * Return the basic HTTP authentication password.
+     *
+     * @return string
+     */
+    public function getHttpAuthPassword();
 }

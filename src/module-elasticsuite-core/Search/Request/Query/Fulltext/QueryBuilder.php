@@ -61,7 +61,13 @@ class QueryBuilder
 
         $fuzzySpellingTypes = [SpellcheckerInterface::SPELLING_TYPE_FUZZY, SpellcheckerInterface::SPELLING_TYPE_MOST_FUZZY];
 
-        if ($spellingType == SpellcheckerInterface::SPELLING_TYPE_PURE_STOPWORDS) {
+        if (is_array($queryText)) {
+            $queries = [];
+            foreach ($queryText as $currentQueryText) {
+                $queries[] = $this->create($containerConfig, $currentQueryText, $spellingType);
+            }
+            $query = $this->queryFactory->create(QueryInterface::TYPE_BOOL, ['should' => $queries, 'boost' => $boost]);
+        } elseif ($spellingType == SpellcheckerInterface::SPELLING_TYPE_PURE_STOPWORDS) {
             $query = $this->getPureStopwordsQuery($containerConfig, $queryText, $boost);
         } elseif (in_array($spellingType, $fuzzySpellingTypes)) {
             $query = $this->getSpellcheckedQuery($containerConfig, $queryText, $spellingType, $boost);
@@ -117,7 +123,7 @@ class QueryBuilder
         $searchableCallback = [$this, 'isSearchableFieldCallback'];
 
 
-        $standardAnalyzer   = FieldInterface::ANALYZER_STANDARD;
+        $standardAnalyzer = FieldInterface::ANALYZER_STANDARD;
         $phraseAnalyzer   = FieldInterface::ANALYZER_WHITESPACE;
         if (is_string($queryText) && str_word_count($queryText) > 1) {
             $phraseAnalyzer = FieldInterface::ANALYZER_SHINGLE;
@@ -340,7 +346,7 @@ class QueryBuilder
      */
     private function isSearchableFieldCallback(FieldInterface $field)
     {
-        return $field->isSearchable();
+        return $field->isSearchable() && $field->getType() == FieldInterface::FIELD_TYPE_STRING;
     }
 
     /**

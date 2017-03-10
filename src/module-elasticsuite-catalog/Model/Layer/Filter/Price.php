@@ -24,7 +24,7 @@ use Smile\ElasticsuiteCore\Search\Request\BucketInterface;
  * @package  Smile\ElasticsuiteCatalog
  * @author   Aurelien FOUCRET <aurelien.foucret@smile.fr>
  */
-class Price extends \Magento\CatalogSearch\Model\Layer\Filter\Price
+class Price extends \Magento\CatalogSearch\Model\Layer\Filter\Price implements FilterInterface
 {
     use DecimalFilterTrait;
 
@@ -93,17 +93,15 @@ class Price extends \Magento\CatalogSearch\Model\Layer\Filter\Price
     }
 
     /**
-     * Append the facet to the product collection.
-     *
-     * @return \Smile\ElasticsuiteCatalog\Model\Layer\Filter\Category
+     * {@inheritDoc}
      */
-    public function addFacetToCollection()
+    public function addFacetToCollection($config = [])
     {
         $facetField      = $this->getFilterField();
         $facetType       = BucketInterface::TYPE_HISTOGRAM;
         $customerGroupId = $this->customerSession->getCustomerGroupId();
 
-        $facetConfig = ['nestedFilter' => ['price.customer_group_id' => $customerGroupId]];
+        $facetConfig = ['nestedFilter' => ['price.customer_group_id' => $customerGroupId], 'minDocCount' => 1];
 
         $calculation = $this->dataProvider->getRangeCalculationValue();
         if ($calculation === \Magento\Catalog\Model\Layer\Filter\DataProvider\Price::RANGE_CALCULATION_MANUAL) {

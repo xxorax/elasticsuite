@@ -111,6 +111,10 @@ class Attribute extends Mapping
             $options['is_used_in_autocomplete'] = true;
         }
 
+        if ($attribute->getIsDisplayedInAutocomplete()) {
+            $options['is_filterable'] = true;
+        }
+
         return $options;
     }
 
@@ -284,9 +288,7 @@ class Attribute extends Mapping
              * @var EavAttributeInterface
              */
             $storeAttribute = $this->attributeFactory->create();
-            $storeAttribute->setStoreId($storeId)
-                ->load($attributeId);
-
+            $storeAttribute->load($attributeId)->setStoreId($storeId);
             $this->storeAttributes[$storeId][$attributeId] = $storeAttribute;
         }
 
