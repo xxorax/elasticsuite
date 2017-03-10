@@ -16,6 +16,7 @@ namespace Smile\ElasticsuiteVirtualCategory\Model;
 
 use Smile\ElasticsuiteCore\Search\Request\QueryInterface;
 use Magento\Catalog\Api\Data\CategoryInterface;
+use Smile\ElasticsuiteVirtualCategory\Api\Data\VirtualRuleInterface;
 
 /**
  * Virtual category rule.
@@ -26,7 +27,7 @@ use Magento\Catalog\Api\Data\CategoryInterface;
  * @package  Smile\ElasticsuiteVirtualCategory
  * @author   Aurelien FOUCRET <aurelien.foucret@smile.fr>
  */
-class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule
+class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule implements VirtualRuleInterface
 {
     /**
      * @var \Smile\ElasticsuiteCore\Search\Request\Query\QueryFactory
@@ -103,29 +104,25 @@ class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule
      */
     public function getCategorySearchQuery($category, $excludedCategories = [])
     {
+        $query         = null;
+
         if (!is_object($category)) {
             $category = $this->categoryFactory->create()->setStoreId($this->getStoreId())->load($category);
         }
 
-        $queryParams = [];
+        if (!in_array($category->getId(), $excludedCategories)) {
+            $excludedCategories[] = $category->getId();
 
-        if ((bool) $category->getIsVirtualCategory() && $category->getIsActive()) {
-            $excludedCategories[]  = $category->getId();
-            $queryParams['must'][] = $this->getVirtualCategoryQuery($category, $excludedCategories);
-
-            $parentCategory = $this->getVirtualRootCategory($category);
-            if ($parentCategory && $parentCategory->getId()) {
-                $queryParams['must'][] = $this->getCategorySearchQuery($parentCategory, $excludedCategories);
+            if ((bool) $category->getIsVirtualCategory() && $category->getIsActive()) {
+                $query = $this->getVirtualCategoryQuery($category, $excludedCategories);
+            } elseif ($category->getId() && $category->getIsActive()) {
+                $query = $this->getStandardCategoryQuery($category, $excludedCategories);
             }
-        } elseif ($category->getId() && $category->getIsActive()) {
-            $queryParams['should'][] = $this->getStandardCategoryQuery($category);
 
-            foreach ($this->getChildrenVirtualCategories($category, $excludedCategories) as $childrenCategory) {
-                $queryParams['should'][] = $this->getVirtualCategoryQuery($childrenCategory, $excludedCategories);
-            }
+            $query = $this->addChildrenQueries($query, $category, $excludedCategories);
         }
 
-        return $this->queryFactory->create(QueryInterface::TYPE_BOOL, $queryParams);
+        return $query;
     }
 
     /**
@@ -151,7 +148,10 @@ class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule
                 ->addAttributeToSelect(['virtual_category_root', 'is_virtual_category', 'virtual_rule']);
 
             foreach ($categoryCollection as $category) {
-                $queries[$category->getId()] = $this->getCategorySearchQuery($category);
+                $childQuery = $this->getCategorySearchQuery($category);
+                if ($childQuery !== null) {
+                    $queries[$category->getId()] = $childQuery;
+                }
             }
         }
 
@@ -175,22 +175,27 @@ class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule
             $rootCategory->load($rootCategoryId);
         }
 
+        if ($rootCategory && $rootCategory->getId() && $rootCategory->getLevel() < 1) {
+            $rootCategory = null;
+        }
+
         return $rootCategory;
     }
 
     /**
      * Transform a category in query rule.
      *
-     * @param CategoryInterface $category Category.
+     * @param CategoryInterface $category           Category.
+     * @param array             $excludedCategories Categories ignored in subquery filters.
      *
      * @return QueryInterface
      */
-    private function getStandardCategoryQuery(CategoryInterface $category)
+    private function getStandardCategoryQuery(CategoryInterface $category, $excludedCategories = [])
     {
         $conditionsParams  = ['data' => ['attribute' => 'category_ids', 'operator' => '()', 'value' => $category->getId()]];
         $categoryCondition = $this->productConditionsFactory->create($conditionsParams);
 
-        return $this->queryBuilder->getSearchQuery($categoryCondition);
+        return $this->queryBuilder->getSearchQuery($categoryCondition, $excludedCategories);
     }
 
     /**
@@ -203,7 +208,49 @@ class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule
      */
     private function getVirtualCategoryQuery(CategoryInterface $category, $excludedCategories = [])
     {
-        return $category->getVirtualRule()->getConditions()->getSearchQuery($excludedCategories);
+        $query          = $category->getVirtualRule()->getConditions()->getSearchQuery($excludedCategories);
+        $parentCategory = $this->getVirtualRootCategory($category);
+
+        if ($parentCategory && in_array($parentCategory->getId(), $excludedCategories)) {
+            $query = null;
+        } if ($parentCategory && $parentCategory->getId()) {
+            $parentQuery = $this->getCategorySearchQuery($parentCategory, $excludedCategories);
+            if ($parentQuery) {
+                $query = $this->queryFactory->create(QueryInterface::TYPE_BOOL, ['must' => [$query, $parentQuery]]);
+            }
+        }
+
+        return $query;
+    }
+
+    /**
+     * Append children queries to the rule.
+     *
+     * @param QueryInterface|NULL $query              Base query.
+     * @param CategoryInterface   $category           Current cayegory.
+     * @param array               $excludedCategories Category already used into the building stack. Avoid short circuit.
+     *
+     * @return \Smile\ElasticsuiteCore\Search\Request\QueryInterface
+     */
+    private function addChildrenQueries($query, CategoryInterface $category, $excludedCategories = [])
+    {
+        $childrenCategories = $this->getChildrenCategories($category, $excludedCategories);
+
+        if ($childrenCategories->getSize() > 0 && $query !== null) {
+            $queryParams = ['should' => [$query], 'cached' => empty($excludedCategories)];
+            foreach ($childrenCategories as $childrenCategory) {
+                $childrenQuery = $this->getCategorySearchQuery($childrenCategory, $excludedCategories);
+                if ($childrenQuery !== null) {
+                    $queryParams['should'][] = $childrenQuery;
+                }
+            }
+
+            if (count($queryParams['should']) > 1) {
+                $query = $this->queryFactory->create(QueryInterface::TYPE_BOOL, $queryParams);
+            }
+        }
+
+        return $query;
     }
 
     /**
@@ -214,14 +261,12 @@ class Rule extends \Smile\ElasticsuiteCatalogRule\Model\Rule
      *
      * @return \Magento\Catalog\Model\ResourceModel\Category\Collection;
      */
-    private function getChildrenVirtualCategories(CategoryInterface $category, $excludedCategories = [])
+    private function getChildrenCategories(CategoryInterface $category, $excludedCategories = [])
     {
         $storeId            = $category->getStoreId();
         $categoryCollection = $this->categoryCollectionFactory->create()->setStoreId($storeId);
 
-        $categoryCollection->addAttributeToFilter('is_virtual_category', 1)
-            ->addAttributeToFilter('is_active', ['neq' => 0]) // Bug (Magento ?) when not using "neq".
-            ->addPathFilter(sprintf('%s/.*', $category->getPath()));
+        $categoryCollection->addIsActiveFilter()->addPathFilter(sprintf('%s/.*', $category->getPath()));
 
         if (!empty($excludedCategories)) {
             $categoryCollection->addAttributeToFilter('entity_id', ['nin' => $excludedCategories]);

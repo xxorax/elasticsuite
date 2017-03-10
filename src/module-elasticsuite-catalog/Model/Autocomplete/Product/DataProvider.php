@@ -16,8 +16,9 @@ namespace Smile\ElasticsuiteCatalog\Model\Autocomplete\Product;
 use Magento\Search\Model\Autocomplete\DataProviderInterface;
 use Magento\Search\Model\QueryFactory;
 use Smile\ElasticsuiteCatalog\Helper\Autocomplete as ConfigurationHelper;
-use Smile\ElasticsuiteCatalog\Model\ResourceModel\Product\Fulltext\CollectionFactory as ProductCollectionFactory;
+use Smile\ElasticsuiteCatalog\Model\ResourceModel\Product\Fulltext\Collection as ProductCollection;
 use Smile\ElasticsuiteCore\Model\Autocomplete\Terms\DataProvider as TermDataProvider;
+use Magento\Catalog\Model\Product\Visibility;
 
 /**
  * Catalog product autocomplete data provider.
@@ -38,29 +39,24 @@ class DataProvider implements DataProviderInterface
      *
      * @var ItemFactory
      */
-    protected $itemFactory;
+    private $itemFactory;
 
     /**
      * Query factory
      *
      * @var QueryFactory
      */
-    protected $queryFactory;
+    private $queryFactory;
 
     /**
      * @var TermDataProvider
      */
-    protected $termDataProvider;
-
-    /**
-     * @var ProductCollectionFactory
-     */
-    protected $productCollectionFactory;
+    private $termDataProvider;
 
     /**
      * @var ConfigurationHelper
      */
-    protected $configurationHelper;
+    private $configurationHelper;
 
     /**
      * @var string Autocomplete result type
@@ -68,29 +64,46 @@ class DataProvider implements DataProviderInterface
     private $type;
 
     /**
+     * @var ProductCollection
+     */
+    private $productCollection;
+
+    /**
+     * Additional product attributes required.
+     *
+     * @var array
+     */
+    private $additionalAttributes;
+
+    /**
      * Constructor.
      *
-     * @param ItemFactory              $itemFactory              Suggest item factory.
-     * @param QueryFactory             $queryFactory             Search query factory.
-     * @param TermDataProvider         $termDataProvider         Search terms suggester.
-     * @param ProductCollectionFactory $productCollectionFactory Product collection factory.
-     * @param ConfigurationHelper      $configurationHelper      Autocomplete configuration helper.
-     * @param string                   $type                     Autocomplete provider type.
+     * @param ItemFactory         $itemFactory          Suggest item factory.
+     * @param QueryFactory        $queryFactory         Search query factory.
+     * @param TermDataProvider    $termDataProvider     Search terms suggester.
+     * @param ProductCollection   $productCollection    Product collection.
+     * @param ConfigurationHelper $configurationHelper  Autocomplete configuration helper.
+     * @param string              $type                 Autocomplete provider type.
+     * @param array               $additionalAttributes Additional product attributes required.
      */
     public function __construct(
         ItemFactory $itemFactory,
         QueryFactory $queryFactory,
         TermDataProvider $termDataProvider,
-        ProductCollectionFactory $productCollectionFactory,
+        ProductCollection $productCollection,
         ConfigurationHelper $configurationHelper,
-        $type = self::AUTOCOMPLETE_TYPE
+        $type = self::AUTOCOMPLETE_TYPE,
+        array $additionalAttributes = []
     ) {
         $this->itemFactory              = $itemFactory;
         $this->queryFactory             = $queryFactory;
         $this->termDataProvider         = $termDataProvider;
-        $this->productCollectionFactory = $productCollectionFactory;
+        $this->productCollection        = $productCollection;
         $this->configurationHelper      = $configurationHelper;
-        $this->type                      = $type;
+        $this->type                     = $type;
+        $this->additionalAttributes     = $additionalAttributes;
+
+        $this->prepareProductCollection();
     }
 
     /**
@@ -107,10 +120,14 @@ class DataProvider implements DataProviderInterface
     public function getItems()
     {
         $result = [];
-        $productCollection = $this->getProductCollection();
-        if ($productCollection) {
-            foreach ($productCollection as $product) {
-                $result[] = $this->itemFactory->create(['product' => $product, 'type' => $this->getType()]);
+
+        if ($this->configurationHelper->isEnabled($this->getType())) {
+            foreach ($this->productCollection as $product) {
+                $result[] = $this->itemFactory->create([
+                    'product'               => $product,
+                    'type'                  => $this->getType(),
+                    'additional_attributes' => $this->additionalAttributes,
+                ]);
             }
         }
 
@@ -118,11 +135,38 @@ class DataProvider implements DataProviderInterface
     }
 
     /**
-     * List of search terms suggested by the search terms data daprovider.
+     * Init suggested products collection.
+     *
+     * @return \Smile\ElasticsuiteCatalog\Model\Autocomplete\Product\DataProvider
+     */
+    private function prepareProductCollection()
+    {
+        $terms = $this->getQueryText();
+        $this->productCollection->addSearchFilter($terms);
+        $this->productCollection->setPageSize($this->getResultsPageSize());
+        $this->productCollection
+            ->addAttributeToSelect('name')
+            ->addAttributeToSelect('thumbnail')
+            ->setVisibility([Visibility::VISIBILITY_IN_SEARCH, Visibility::VISIBILITY_BOTH])
+            ->addPriceData();
+
+        if ($this->additionalAttributes) {
+            $this->productCollection->addAttributeToSelect($this->additionalAttributes);
+        }
+
+        if (!$this->configurationHelper->isShowOutOfStock()) {
+            $this->productCollection->addIsInStockFilter();
+        }
+
+        return $this;
+    }
+
+    /**
+     * List of search terms suggested by the search terms data provider.
      *
      * @return array
      */
-    private function getSuggestedTerms()
+    private function getQueryText()
     {
         $terms = array_map(
             function (\Magento\Search\Model\Autocomplete\Item $termItem) {
@@ -131,38 +175,11 @@ class DataProvider implements DataProviderInterface
             $this->termDataProvider->getItems()
         );
 
+        if (empty($terms)) {
+            $terms = [$this->queryFactory->get()->getQueryText()];
+        }
+
         return $terms;
-    }
-
-    /**
-     * Suggested products collection.
-     * Returns null if no suggested search terms.
-     *
-     * @return \Smile\ElasticsuiteCatalog\Model\ResourceModel\Product\Fulltext\Collection|null
-     */
-    private function getProductCollection()
-    {
-        $productCollection = null;
-        $suggestedTerms = $this->getSuggestedTerms();
-        $terms          = [$this->queryFactory->get()->getQueryText()];
-
-        if (!empty($suggestedTerms)) {
-            $terms = array_merge($terms, $suggestedTerms);
-        }
-
-        $productCollection = $this->productCollectionFactory->create(['searchRequestName' => 'quick_search_container']);
-        $productCollection->addSearchFilter($terms);
-        $productCollection->setPageSize($this->getResultsPageSize());
-        $productCollection
-            ->addAttributeToSelect('name')
-            ->addAttributeToSelect('small_image')
-            ->addPriceData();
-
-        if (!$this->configurationHelper->isShowOutOfStock()) {
-            $productCollection->addIsInStockFilter();
-        }
-
-        return $productCollection;
     }
 
     /**

@@ -19,6 +19,8 @@ use Smile\ElasticsuiteCore\Api\Index\Mapping\FieldInterface;
 /**
  * Default implementation for ES mapping field (Smile\ElasticsuiteCore\Api\Index\Mapping\FieldInterface).
  *
+ * @SuppressWarnings(ExcessiveClassComplexity)
+ *
  * @category Smile_Elasticsuite
  * @package  Smile\ElasticsuiteCore
  * @author   Aurelien FOUCRET <aurelien.foucret@smile.fr>
@@ -233,7 +235,7 @@ class Field implements FieldInterface
         $isAnalyzerCorrect = true;
 
         if ($property['type'] == self::FIELD_TYPE_STRING) {
-            $isAnalyzed        = $expectedAnalyzer !== self::ANALYZER_UNTOUCHED;
+            $isAnalyzed = $expectedAnalyzer !== self::ANALYZER_UNTOUCHED;
 
             if ($isAnalyzed && (!isset($property['analyzer']) || $property['analyzer'] != $expectedAnalyzer)) {
                 $isAnalyzerCorrect = false;
@@ -287,17 +289,13 @@ class Field implements FieldInterface
     {
         $analyzers = [];
 
-        if ($this->isSearchable()) {
+        if ($this->isSearchable() || $this->isUsedForSortBy()) {
             // Default search analyzer.
-            $analyzers = [self::ANALYZER_STANDARD, self::ANALYZER_WHITESPACE, self::ANALYZER_SHINGLE];
+            $analyzers = [self::ANALYZER_STANDARD];
 
-            if ($this->isUsedInAutocomplete()) {
-                // Append edge_ngram analyzer when the field is used in autocomplete.
-                $analyzers[] = self::ANALYZER_EDGE_NGRAM;
-            }
-
-            if ($this->isUsedInSpellcheck()) {
-                $analyzers[] = self::ANALYZER_PHONETIC;
+            if ($this->isSearchable() && $this->getSearchWeight() > 1) {
+                $analyzers[] = self::ANALYZER_WHITESPACE;
+                $analyzers[] = self::ANALYZER_SHINGLE;
             }
         }
 
@@ -321,15 +319,22 @@ class Field implements FieldInterface
      *
      * @return array
      */
-    private function getPropertyConfig($analyzer = null)
+    private function getPropertyConfig($analyzer = self::ANALYZER_UNTOUCHED)
     {
-        $fieldMapping = ['type' => $this->getType(), 'fielddata' => ['format' => 'doc_values']];
+        $fieldMapping = ['type' => $this->getType(), 'doc_values' => true, 'norms' => ['enabled' => false]];
 
         if ($this->getType() == self::FIELD_TYPE_STRING && $analyzer == self::ANALYZER_UNTOUCHED) {
             $fieldMapping['index'] = 'not_analyzed';
         } elseif ($this->getType() == self::FIELD_TYPE_STRING) {
-            $fieldMapping['fielddata'] = ['format' => 'lazy'];
-            $fieldMapping['analyzer']  = $analyzer !== null ? $analyzer : self::ANALYZER_UNTOUCHED;
+            $fieldMapping['analyzer']   = $analyzer;
+            $fieldMapping['doc_values'] = false;
+            $fieldMapping['index_options'] = 'docs';
+            if (in_array($analyzer, [self::ANALYZER_STANDARD, self::ANALYZER_WHITESPACE])) {
+                $fieldMapping['index_options'] = 'positions';
+            }
+            if ($analyzer !== self::ANALYZER_SORTABLE) {
+                $fieldMapping['fielddata'] = ['format' => 'disabled'];
+            }
         } elseif ($this->getType() == self::FIELD_TYPE_DATE) {
             $fieldMapping['format'] = implode('||', $this->dateFormats);
         }

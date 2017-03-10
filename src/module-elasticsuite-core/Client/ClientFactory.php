@@ -21,7 +21,7 @@ use Smile\ElasticsuiteCore\Api\Client\ClientConfigurationInterface;
 use Smile\ElasticsuiteCore\Api\Client\ClientFactoryInterface;
 
 /**
- * Provides a simple way to retrieve an ElasticSearch client.
+ * Provides a simple way to retrieve an Elasticsearch client.
  *
  * @category  Smile
  * @package   Smile\ElasticsuiteCore
@@ -47,8 +47,8 @@ class ClientFactory implements ClientFactoryInterface
     /**
      * Factory constructor.
      *
-     * @param ClientConfigurationInterface $clientConfiguration ElasticSearch configuration helper.
-     * @param LoggerInterface              $logger              ElasticSearch logger.
+     * @param ClientConfigurationInterface $clientConfiguration Elasticsearch configuration helper.
+     * @param LoggerInterface              $logger              Elasticsearch logger.
      */
     public function __construct(ClientConfigurationInterface $clientConfiguration, LoggerInterface $logger)
     {
@@ -65,13 +65,45 @@ class ClientFactory implements ClientFactoryInterface
     {
         if ($this->client === null) {
             $clientBuilder = ClientBuilder::create();
-            $clientBuilder->setHosts($this->clientConfiguration->getServerList());
+            $hosts         = $this->getHosts();
+            $clientBuilder->setHosts($hosts);
+
             if ($this->clientConfiguration->isDebugModeEnabled()) {
                 $clientBuilder->setLogger($this->logger);
             }
+
             $this->client = $clientBuilder->build();
         }
 
         return $this->client;
+    }
+
+    /**
+     * Return hosts config used to connect to the cluster.
+     *
+     * @return array
+     */
+    private function getHosts()
+    {
+        $hosts               = [];
+        $clientConfiguration = $this->clientConfiguration;
+
+        foreach ($clientConfiguration->getServerList() as $host) {
+            list($hostname, $port) = explode(':', $host);
+            $currentHostConfig = [
+                'host'   => $hostname,
+                'port'   => $port,
+                'scheme' => $clientConfiguration->getScheme(),
+            ];
+
+            if ($clientConfiguration->isHttpAuthEnabled()) {
+                $currentHostConfig['user'] = $clientConfiguration->getHttpAuthUser();
+                $currentHostConfig['pass'] = $clientConfiguration->getHttpAuthPassword();
+            }
+
+            $hosts[] = $currentHostConfig;
+        }
+
+        return $hosts;
     }
 }

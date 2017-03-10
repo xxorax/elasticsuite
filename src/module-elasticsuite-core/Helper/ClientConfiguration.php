@@ -26,7 +26,7 @@ use Smile\ElasticsuiteCore\Api\Client\ClientConfigurationInterface;
 class ClientConfiguration extends AbstractConfiguration implements ClientConfigurationInterface
 {
     /**
-     * Location of ElasticSearch client configuration.
+     * Location of Elasticsearch client configuration.
      *
      * @var string
      */
@@ -54,6 +54,40 @@ class ClientConfiguration extends AbstractConfiguration implements ClientConfigu
     public function getConnectionTimeout()
     {
         return (int) $this->getElasticsearchClientConfigParam('connection_timeout');
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getScheme()
+    {
+        return (bool) $this->getElasticsearchClientConfigParam('enable_https_mode') ? 'https' : 'http';
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function isHttpAuthEnabled()
+    {
+        $authEnabled = (bool) $this->getElasticsearchClientConfigParam('enable_http_auth');
+
+        return $authEnabled && !empty($this->getHttpAuthUser()) && !empty($this->getHttpAuthPassword());
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getHttpAuthUser()
+    {
+        return (string) $this->getElasticsearchClientConfigParam('http_auth_user');
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getHttpAuthPassword()
+    {
+        return (string) $this->getElasticsearchClientConfigParam('http_auth_pwd');
     }
 
     /**

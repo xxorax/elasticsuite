@@ -23,7 +23,7 @@ use Smile\ElasticsuiteCore\Search\Request\BucketInterface;
  * @package  Smile\ElasticsuiteCatalog
  * @author   Aurelien FOUCRET <aurelien.foucret@smile.fr>
  */
-class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
+class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute implements FilterInterface
 {
     /**
      * @var array
@@ -36,6 +36,16 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
     private $tagFilter;
 
     /**
+     * @var boolean
+     */
+    private $hasMoreItems = false;
+
+    /**
+     * @var \Smile\ElasticsuiteCore\Helper\Mapping
+     */
+    private $mappingHelper;
+
+    /**
      * Constructor.
      *
      * @param \Magento\Catalog\Model\Layer\Filter\ItemFactory      $filterItemFactory Factory for item of the facets.
@@ -43,6 +53,7 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
      * @param \Magento\Catalog\Model\Layer                         $layer             Catalog product layer.
      * @param \Magento\Catalog\Model\Layer\Filter\Item\DataBuilder $itemDataBuilder   Item data builder.
      * @param \Magento\Framework\Filter\StripTags                  $tagFilter         String HTML tags filter.
+     * @param \Smile\ElasticsuiteCore\Helper\Mapping               $mappingHelper     Mapping helper.
      * @param array                                                $data              Custom data.
      */
     public function __construct(
@@ -51,6 +62,7 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
         \Magento\Catalog\Model\Layer $layer,
         \Magento\Catalog\Model\Layer\Filter\Item\DataBuilder $itemDataBuilder,
         \Magento\Framework\Filter\StripTags $tagFilter,
+        \Smile\ElasticsuiteCore\Helper\Mapping $mappingHelper,
         array $data = []
     ) {
         parent::__construct(
@@ -62,7 +74,8 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
             $data
         );
 
-        $this->tagFilter = $tagFilter;
+        $this->tagFilter     = $tagFilter;
+        $this->mappingHelper = $mappingHelper;
     }
 
     /**
@@ -95,15 +108,13 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
     }
 
     /**
-     * Append the facet to the product collection.
-     *
-     * @return \Smile\ElasticsuiteCatalog\Model\Layer\Filter\Attribute
+     * {@inheritDoc}
      */
-    public function addFacetToCollection()
+    public function addFacetToCollection($config = [])
     {
         $facetField  = $this->getFilterField();
         $facetType   = BucketInterface::TYPE_TERM;
-        $facetConfig = $this->getFacetConfig();
+        $facetConfig = $this->getFacetConfig($config);
 
         $productCollection = $this->getLayer()->getProductCollection();
         $productCollection->addFacet($facetField, $facetType, $facetConfig);
@@ -112,7 +123,18 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
     }
 
     /**
+     * Indicates if the facets has more documents to be displayed.
+     *
+     * @return boolean
+     */
+    public function hasMoreItems()
+    {
+        return $this->hasMoreItems;
+    }
+
+    /**
      * @SuppressWarnings(PHPMD.CamelCaseMethodName)
+     * @SuppressWarnings(PHPMD.ElseExpression)
      *
      * {@inheritDoc}
      */
@@ -124,6 +146,11 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
         $optionsFacetedData = $productCollection->getFacetedData($this->getFilterField());
 
         $items     = [];
+
+        if (isset($optionsFacetedData['__other_docs'])) {
+            $this->hasMoreItems = $optionsFacetedData['__other_docs']['count'] > 0;
+            unset($optionsFacetedData['__other_docs']);
+        }
 
         foreach ($optionsFacetedData as $value => $data) {
             $items[$value] = [
@@ -174,7 +201,7 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
         $field = $this->getAttributeModel()->getAttributeCode();
 
         if ($this->getAttributeModel()->usesSource()) {
-            $field = 'option_text_' . $field;
+            $field = $this->mappingHelper->getOptionTextFieldName($field);
         }
 
         return $field;
@@ -183,22 +210,40 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
     /**
      * Retrieve configuration of the facet added to the collection.
      *
+     * @param array $config Config override.
+     *
      * @return array
      */
-    private function getFacetConfig()
+    private function getFacetConfig($config = [])
     {
         $attribute = $this->getAttributeModel();
 
-        $facetConfig = [
-            'size'      => $attribute->getFacetMaxSize(),
+        $defaultConfig = [
+            'size'      => $this->getFacetSize(),
             'sortOrder' => $attribute->getFacetSortOrder(),
         ];
 
-        if (!empty($this->currentFilterValue)) {
-            $facetConfig['size'] = 0;
+        return array_merge($defaultConfig, $config);
+    }
+
+    /**
+     * Current facet size.
+     *
+     * @return integer
+     */
+    private function getFacetSize()
+    {
+        $attribute = $this->getAttributeModel();
+        $size      = (int) $attribute->getFacetMaxSize();
+
+        $hasValue      = !empty($this->currentFilterValue);
+        $isManualOrder = $attribute->getFacetSortOrder() == BucketInterface::SORT_ORDER_MANUAL;
+
+        if ($hasValue || $isManualOrder) {
+            $size = 0;
         }
 
-        return $facetConfig;
+        return $size;
     }
 
     /**
@@ -210,22 +255,22 @@ class Attribute extends \Magento\CatalogSearch\Model\Layer\Filter\Attribute
      */
     private function addOptionsData(array $items)
     {
-        $options = $this->getAttributeModel()->getFrontend()->getSelectOptions();
-        $optionPosition = 0;
+        if ($this->getAttributeModel()->getFacetSortOrder() == BucketInterface::SORT_ORDER_MANUAL) {
+            $options = $this->getAttributeModel()->getFrontend()->getSelectOptions();
+            $optionPosition = 0;
 
-        if (!empty($options)) {
-            foreach ($options as $option) {
-                $optionLabel = (string) $option['label'];
-                $optionPosition++;
+            if (!empty($options)) {
+                foreach ($options as $option) {
+                    $optionLabel = (string) $option['label'];
+                    $optionPosition++;
 
-                if ($optionLabel && isset($items[$optionLabel])) {
-                    $items[$optionLabel]['adminSortIndex'] = $optionPosition;
-                    $items[$optionLabel]['value']          = $option['value'];
+                    if ($optionLabel && isset($items[$optionLabel])) {
+                        $items[$optionLabel]['adminSortIndex'] = $optionPosition;
+                        $items[$optionLabel]['value']          = $option['value'];
+                    }
                 }
             }
-        }
 
-        if ($this->getAttributeModel()->getFacetSortOrder() == BucketInterface::SORT_ORDER_MANUAL) {
             usort($items, function ($item1, $item2) {
                 return $item1['adminSortIndex'] <= $item2['adminSortIndex'] ? -1 : 1;
             });

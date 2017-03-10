@@ -16,6 +16,7 @@ namespace Smile\ElasticsuiteThesaurus\Model\Indexer;
 
 use Smile\ElasticsuiteCore\Api\Client\ClientFactoryInterface;
 use Smile\ElasticsuiteCore\Helper\IndexSettings as IndexSettingsHelper;
+use Smile\ElasticsuiteCore\Helper\Cache as CacheHelper;
 use Smile\ElasticsuiteCore\Api\Index\IndexOperationInterface;
 use Smile\ElasticsuiteThesaurus\Model\Index as ThesaurusIndex;
 
@@ -44,20 +45,28 @@ class IndexHandler
     private $indexManager;
 
     /**
+     * @var CacheHelper
+     */
+    private $cacheHelper;
+
+    /**
      * Constructor.
      *
      * @param ClientFactoryInterface  $clientFactory       ES Client factory.
-     * @param IndexSettingsHelper     $indexSettingsHelper Index settings helper.
      * @param IndexOperationInterface $indexManager        ES index management tool
+     * @param IndexSettingsHelper     $indexSettingsHelper Index settings helper.
+     * @param CacheHelper             $cacheHelper         ES caching helper.
      */
     public function __construct(
         ClientFactoryInterface $clientFactory,
+        IndexOperationInterface $indexManager,
         IndexSettingsHelper $indexSettingsHelper,
-        IndexOperationInterface $indexManager
+        CacheHelper $cacheHelper
     ) {
         $this->client              = $clientFactory->createClient();
         $this->indexSettingsHelper = $indexSettingsHelper;
         $this->indexManager        = $indexManager;
+        $this->cacheHelper         = $cacheHelper;
     }
 
     /**
@@ -78,6 +87,7 @@ class IndexHandler
 
         $this->client->indices()->create(['index' => $indexName, 'body' => $indexSettings]);
         $this->indexManager->proceedIndexInstall($indexName, $indexAlias);
+        $this->cacheHelper->cleanIndexCache(ThesaurusIndex::INDEX_IDENTIER, $storeId);
     }
 
     /**
@@ -91,8 +101,9 @@ class IndexHandler
     private function getIndexSettings($synonyms, $expansions)
     {
         $settings = [
-            'number_of_shards'   => $this->indexSettingsHelper->getNumberOfShards(),
-            'number_of_replicas' => $this->indexSettingsHelper->getNumberOfReplicas(),
+            'number_of_shards'      => $this->indexSettingsHelper->getNumberOfShards(),
+            'number_of_replicas'    => $this->indexSettingsHelper->getNumberOfReplicas(),
+            'requests.cache.enable' => true,
         ];
 
         $settings['analysis']['filter']['shingle'] = [

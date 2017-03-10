@@ -15,7 +15,7 @@
 namespace Smile\ElasticsuiteCore\Api\Index\Mapping;
 
 /**
- * Representation of a ElasticSearch field (abstraction of mapping properties).
+ * Representation of a Elasticsearch field (abstraction of mapping properties).
  *
  * @category Smile_Elasticsuite
  * @package  Smile\ElasticsuiteCore
@@ -46,7 +46,6 @@ interface FieldInterface
     const ANALYZER_SHINGLE    = 'shingle';
     const ANALYZER_SORTABLE   = 'sortable';
     const ANALYZER_PHONETIC   = 'phonetic';
-    const ANALYZER_EDGE_NGRAM = 'edge_ngram_front';
     const ANALYZER_UNTOUCHED  = 'untouched';
 
     /**

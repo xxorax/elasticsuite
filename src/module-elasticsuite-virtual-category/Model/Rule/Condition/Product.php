@@ -47,6 +47,7 @@ class Product extends \Smile\ElasticsuiteCatalogRule\Model\Rule\Condition\Produc
      * @param \Magento\Catalog\Model\ResourceModel\Product                              $productResource   Product resource model.
      * @param \Magento\Eav\Model\ResourceModel\Entity\Attribute\Set\Collection          $attrSetCollection Attribute set collection.
      * @param \Magento\Framework\Locale\FormatInterface                                 $localeFormat      Locale format.
+     * @param \Magento\Config\Model\Config\Source\Yesno                                 $booleanSource     Data source for boolean select.
      * @param \Smile\ElasticsuiteCore\Search\Request\Query\QueryFactory                 $queryFactory      Search query factory.
      * @param array                                                                     $data              Additional data.
      */
@@ -61,10 +62,11 @@ class Product extends \Smile\ElasticsuiteCatalogRule\Model\Rule\Condition\Produc
         \Magento\Catalog\Model\ResourceModel\Product $productResource,
         \Magento\Eav\Model\ResourceModel\Entity\Attribute\Set\Collection $attrSetCollection,
         \Magento\Framework\Locale\FormatInterface $localeFormat,
+        \Magento\Config\Model\Config\Source\Yesno $booleanSource,
         \Smile\ElasticsuiteCore\Search\Request\Query\QueryFactory $queryFactory,
         array $data = []
     ) {
-        parent::__construct($context, $backendData, $config, $attributeList, $queryBuilder, $productFactory, $productRepository, $productResource, $attrSetCollection, $localeFormat, $data);
+        parent::__construct($context, $backendData, $config, $attributeList, $queryBuilder, $productFactory, $productRepository, $productResource, $attrSetCollection, $localeFormat, $booleanSource, $data);
         $this->queryFactory = $queryFactory;
     }
 
@@ -99,13 +101,18 @@ class Product extends \Smile\ElasticsuiteCatalogRule\Model\Rule\Condition\Produc
         $subQueries  = [];
 
         foreach ($categoryIds as $categoryId) {
-            $subQueries[] = $this->getRule()->getCategorySearchQuery($categoryId, $excludedCategories);
+            $subQuery = $this->getRule()->getCategorySearchQuery($categoryId, $excludedCategories);
+            if ($subQuery !== null) {
+                $subQueries[] = $subQuery;
+            }
         }
 
-        $query = $this->queryFactory->create(QueryInterface::TYPE_BOOL, ['should' => $subQueries]);
+        $query = null;
 
         if (count($subQueries) === 1) {
             $query = current($subQueries);
+        } elseif (count($subQueries) > 1) {
+            $query = $this->queryFactory->create(QueryInterface::TYPE_BOOL, ['should' => $subQueries]);
         }
 
         return $query;

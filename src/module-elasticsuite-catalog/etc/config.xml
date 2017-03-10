@@ -25,6 +25,9 @@
             <product_autocomplete>
                 <max_size>5</max_size>
             </product_autocomplete>
+            <product_attribute_autocomplete>
+                <max_size>3</max_size>
+            </product_attribute_autocomplete>
             <category_autocomplete>
                 <max_size>3</max_size>
             </category_autocomplete>
@@ -32,6 +35,7 @@
         <smile_elasticsuite_catalogsearch_settings>
             <catalogsearch>
                 <redirect_if_one_result>1</redirect_if_one_result>
+                <expanded_facets>3</expanded_facets>
             </catalogsearch>
         </smile_elasticsuite_catalogsearch_settings>
     </default>
